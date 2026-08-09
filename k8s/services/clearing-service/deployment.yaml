@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clearing-service
+  namespace: payment-processor
+  labels:
+    app: clearing-service
+    app.kubernetes.io/part-of: payment-processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clearing-service
+  template:
+    metadata:
+      labels:
+        app: clearing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: /actuator/prometheus
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "paymentprocessor"
+        vault.hashicorp.com/agent-inject-secret-db: "secret/data/paymentprocessor/clearing-service"
+    spec:
+      serviceAccountName: paymentprocessor
+      containers:
+        - name: clearing-service
+          image: paymentprocessor/clearing-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8089
+          envFrom:
+            - configMapRef:
+                name: clearing-service-config
+            - secretRef:
+                name: clearing-service-secret
+                optional: true
+          env:
+            - name: SERVER_PORT
+              value: "8089"
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod,vault
+            - name: VAULT_ENABLED
+              value: "true"
+            - name: VAULT_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: VAULT_URI
+            - name: VAULT_AUTHENTICATION
+              value: KUBERNETES
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: KAFKA_BOOTSTRAP
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: KAFKA_BOOTSTRAP
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 40
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

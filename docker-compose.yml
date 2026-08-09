@@ -48,3 +48,8 @@ services:
 
 volumes:
   pgdata:
+
+# Observability / Vault sidecars (profiles: observability, vault)
+include:
+  - path: docker/observability/docker-compose.observability.yml
+  - path: docker/vault/docker-compose.vault.yml

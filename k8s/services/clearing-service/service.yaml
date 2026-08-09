@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clearing-service
+  namespace: payment-processor
+  labels:
+    app: clearing-service
+spec:
+  selector:
+    app: clearing-service
+  ports:
+    - name: http
+      port: 8089
+      targetPort: http
+  type: ClusterIP
