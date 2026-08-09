@@ -1,0 +1,164 @@
+spring:
+  application:
+    name: clearing-service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      fail-fast: false
+      retry:
+        max-attempts: 6
+        initial-interval: 1500
+        multiplier: 1.5
+        max-interval: 3000
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/clearingservicedb}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:Mysql@2022}
+    hikari:
+      pool-name: clearing-pool
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN:5}
+      connection-timeout: 30000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway is the single source of truth for the schema. Set to "validate"
+      # in CI against a migrated database to detect entity/schema drift.
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  # OAuth2 resource-server settings. Tokens are verified offline against the
+  # authentication service's published JWK set, so no network call to the auth
+  # service is needed per request.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+          issuer-uri: ${JWT_ISSUER:https://auth.paymentprocessor.local}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 5
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  profiles:
+    active:
+      - local
+
+server:
+  port: ${SERVER_PORT:8089}
+  shutdown: graceful
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.paymentprocessor.clearingservice: INFO
+
+# ---------------------------------------------------------------------------
+# Clearing Service domain configuration
+# ---------------------------------------------------------------------------
+clearing:
+  # Base currency-minor-unit handling assumes ISO 4217 default exponents.
+  batching:
+    # Max number of transactions allowed per generated clearing batch/file.
+    max-batch-size: ${CLEARING_MAX_BATCH_SIZE:5000}
+    # Cron for automatic batch formation (default: every 10 minutes).
+    formation-cron: ${CLEARING_FORMATION_CRON:0 */10 * * * *}
+  submission:
+    # Cron for the outbound submission sweep (default: every minute).
+    sweep-cron: ${CLEARING_SUBMISSION_CRON:0 * * * * *}
+    max-attempts: ${CLEARING_SUBMISSION_MAX_ATTEMPTS:5}
+    backoff-initial-ms: ${CLEARING_SUBMISSION_BACKOFF_MS:60000}
+    backoff-multiplier: ${CLEARING_SUBMISSION_BACKOFF_MULTIPLIER:2.0}
+  storage:
+    # Directory where generated clearing files are persisted.
+    directory: ${CLEARING_STORAGE_DIR:./clearing-files}
+  transport:
+    # When true, submissions are short-circuited by a mock transport so the
+    # service runs end-to-end without a live external clearing application.
+    mock: ${CLEARING_TRANSPORT_MOCK:true}
+    base-url: ${CLEARING_TRANSPORT_BASE_URL:http://localhost:9099}
+    submit-path: ${CLEARING_TRANSPORT_SUBMIT_PATH:/clearing/submissions}
+    api-key: ${CLEARING_TRANSPORT_API_KEY:}
+    connect-timeout-ms: ${CLEARING_TRANSPORT_CONNECT_TIMEOUT_MS:5000}
+    response-timeout-ms: ${CLEARING_TRANSPORT_RESPONSE_TIMEOUT_MS:15000}
+  outbox:
+    # Cron for the outbox -> Kafka publisher sweep (default: every 5 seconds).
+    publish-cron: ${CLEARING_OUTBOX_CRON:*/5 * * * * *}
+    batch-size: ${CLEARING_OUTBOX_BATCH_SIZE:200}
+  events:
+    topic: ${CLEARING_EVENTS_TOPIC:clearingservicetopic}
+  security:
+    # Optional API-key gate for the REST API, for machine-to-machine network
+    # partners that have no platform identity. Independent of the JWT gate
+    # below - see SecurityConfig for how the two relate. Disabled by default.
+    api-key-enabled: ${CLEARING_API_KEY_ENABLED:false}
+    api-key: ${CLEARING_API_KEY:}
+
+# Toggle: lets local/dev runs and the seeded sample data be exercised without a token.
+security:
+  jwt:
+    enabled: ${SECURITY_JWT_ENABLED:true}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+# Local/dev runs are exercised against seeded sample data with plain curl, so the
+# JWT resource-server chain is swapped for a permit-all chain here (never in prod).
+security:
+  jwt:
+    enabled: false
