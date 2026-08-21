@@ -3,6 +3,7 @@ package com.paymentprocessor.clearingservice.service.format;
 import com.paymentprocessor.clearingservice.domain.ClearingBatch;
 import com.paymentprocessor.clearingservice.domain.ClearingTransaction;
 import com.paymentprocessor.clearingservice.domain.enums.ClearingFormat;
+import com.paymentprocessor.clearingservice.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -35,29 +36,19 @@ public class CsvFormatter implements ClearingMessageFormatter {
         long total = 0L;
         for (ClearingTransaction t : transactions) {
             total += t.getAmountMinor();
-            sb.append(csv(t.getSourceTransactionId())).append(',')
-                    .append(csv(t.getMerchantId())).append(',')
+            sb.append(StringUtils.escapeCsv(t.getSourceTransactionId())).append(',')
+                    .append(StringUtils.escapeCsv(t.getMerchantId())).append(',')
                     .append(t.getTransactionType()).append(',')
                     .append(t.getAmountMinor()).append(',')
                     .append(t.getCurrency()).append(',')
-                    .append(csv(t.getMcc())).append(',')
-                    .append(csv(t.getAuthCode())).append(',')
-                    .append(csv(t.getArn())).append(',')
-                    .append(csv(t.getPanToken())).append(',')
+                    .append(StringUtils.escapeCsv(t.getMcc())).append(',')
+                    .append(StringUtils.escapeCsv(t.getAuthCode())).append(',')
+                    .append(StringUtils.escapeCsv(t.getArn())).append(',')
+                    .append(StringUtils.escapeCsv(t.getPanToken())).append(',')
                     .append(t.getSettlementDate()).append('\n');
         }
         // Trailer: record count and control total
         sb.append("TRL,").append(transactions.size()).append(',').append(total).append('\n');
         return sb.toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static String csv(String value) {
-        if (value == null) {
-            return "";
-        }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            return '"' + value.replace("\"", "\"\"") + '"';
-        }
-        return value;
     }
 }

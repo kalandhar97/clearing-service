@@ -48,15 +48,47 @@ public class ClearingAcknowledgement {
 
     public static ClearingAcknowledgement of(UUID batchId, String ackReference, AckStatus status,
                                              String reasonCode, String message, String rawPayload) {
-        ClearingAcknowledgement a = new ClearingAcknowledgement();
-        a.id = UUID.randomUUID();
-        a.batchId = batchId;
-        a.ackReference = ackReference;
-        a.status = status;
-        a.reasonCode = reasonCode;
-        a.message = message;
-        a.rawPayload = rawPayload;
-        return a;
+        return builder()
+                .batchId(batchId)
+                .ackReference(ackReference)
+                .status(status)
+                .reasonCode(reasonCode)
+                .message(message)
+                .rawPayload(rawPayload)
+                .build();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /** Fluent builder for {@link ClearingAcknowledgement}. */
+    public static final class Builder {
+        private UUID batchId;
+        private String ackReference;
+        private AckStatus status;
+        private String reasonCode;
+        private String message;
+        private String rawPayload;
+
+        public Builder batchId(UUID v) { this.batchId = v; return this; }
+        public Builder ackReference(String v) { this.ackReference = v; return this; }
+        public Builder status(AckStatus v) { this.status = v; return this; }
+        public Builder reasonCode(String v) { this.reasonCode = v; return this; }
+        public Builder message(String v) { this.message = v; return this; }
+        public Builder rawPayload(String v) { this.rawPayload = v; return this; }
+
+        public ClearingAcknowledgement build() {
+            ClearingAcknowledgement a = new ClearingAcknowledgement();
+            a.id = UUID.randomUUID();
+            a.batchId = batchId;
+            a.ackReference = ackReference;
+            a.status = status;
+            a.reasonCode = reasonCode;
+            a.message = message;
+            a.rawPayload = rawPayload;
+            return a;
+        }
     }
 
     @PrePersist

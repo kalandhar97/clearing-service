@@ -98,23 +98,78 @@ public class ClearingTransaction {
                                              String currency, long amountMinor, String region,
                                              LocalDate settlementDate, String mcc, String authCode,
                                              String arn, String panToken, Instant capturedAt) {
-        ClearingTransaction t = new ClearingTransaction();
-        t.id = UUID.randomUUID();
-        t.sourceTransactionId = sourceTransactionId;
-        t.merchantId = merchantId;
-        t.network = network;
-        t.transactionType = transactionType;
-        t.currency = currency;
-        t.amountMinor = amountMinor;
-        t.region = region;
-        t.settlementDate = settlementDate;
-        t.mcc = mcc;
-        t.authCode = authCode;
-        t.arn = arn;
-        t.panToken = panToken;
-        t.capturedAt = capturedAt;
-        t.status = ClearingTransactionStatus.PENDING;
-        return t;
+        return builder()
+                .sourceTransactionId(sourceTransactionId)
+                .merchantId(merchantId)
+                .network(network)
+                .transactionType(transactionType)
+                .currency(currency)
+                .amountMinor(amountMinor)
+                .region(region)
+                .settlementDate(settlementDate)
+                .mcc(mcc)
+                .authCode(authCode)
+                .arn(arn)
+                .panToken(panToken)
+                .capturedAt(capturedAt)
+                .build();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /** Fluent builder for {@link ClearingTransaction}. */
+    public static final class Builder {
+        private String sourceTransactionId;
+        private String merchantId;
+        private Network network;
+        private TransactionType transactionType;
+        private String currency;
+        private long amountMinor;
+        private String region;
+        private LocalDate settlementDate;
+        private String mcc;
+        private String authCode;
+        private String arn;
+        private String panToken;
+        private Instant capturedAt;
+        private ClearingTransactionStatus status = ClearingTransactionStatus.PENDING;
+
+        public Builder sourceTransactionId(String v) { this.sourceTransactionId = v; return this; }
+        public Builder merchantId(String v) { this.merchantId = v; return this; }
+        public Builder network(Network v) { this.network = v; return this; }
+        public Builder transactionType(TransactionType v) { this.transactionType = v; return this; }
+        public Builder currency(String v) { this.currency = v; return this; }
+        public Builder amountMinor(long v) { this.amountMinor = v; return this; }
+        public Builder region(String v) { this.region = v; return this; }
+        public Builder settlementDate(LocalDate v) { this.settlementDate = v; return this; }
+        public Builder mcc(String v) { this.mcc = v; return this; }
+        public Builder authCode(String v) { this.authCode = v; return this; }
+        public Builder arn(String v) { this.arn = v; return this; }
+        public Builder panToken(String v) { this.panToken = v; return this; }
+        public Builder capturedAt(Instant v) { this.capturedAt = v; return this; }
+        public Builder status(ClearingTransactionStatus v) { this.status = v; return this; }
+
+        public ClearingTransaction build() {
+            ClearingTransaction t = new ClearingTransaction();
+            t.id = UUID.randomUUID();
+            t.sourceTransactionId = sourceTransactionId;
+            t.merchantId = merchantId;
+            t.network = network;
+            t.transactionType = transactionType;
+            t.currency = currency;
+            t.amountMinor = amountMinor;
+            t.region = region;
+            t.settlementDate = settlementDate;
+            t.mcc = mcc;
+            t.authCode = authCode;
+            t.arn = arn;
+            t.panToken = panToken;
+            t.capturedAt = capturedAt;
+            t.status = status;
+            return t;
+        }
     }
 
     @PrePersist

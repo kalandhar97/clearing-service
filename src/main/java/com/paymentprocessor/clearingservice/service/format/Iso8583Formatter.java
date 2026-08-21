@@ -3,6 +3,7 @@ package com.paymentprocessor.clearingservice.service.format;
 import com.paymentprocessor.clearingservice.domain.ClearingBatch;
 import com.paymentprocessor.clearingservice.domain.ClearingTransaction;
 import com.paymentprocessor.clearingservice.domain.enums.ClearingFormat;
+import com.paymentprocessor.clearingservice.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -39,15 +40,15 @@ public class Iso8583Formatter implements ClearingMessageFormatter {
             total += t.getAmountMinor();
             // MTI 1240 clearing message with selected data elements.
             sb.append("1240")
-                    .append("|DE2=").append(nullToEmpty(t.getPanToken()))
+                    .append("|DE2=").append(StringUtils.nullToEmpty(t.getPanToken()))
                     .append("|DE3=").append(processingCode(t))          // processing code
                     .append("|DE4=").append(pad12(t.getAmountMinor()))  // amount, minor units
-                    .append("|DE37=").append(nullToEmpty(t.getArn()))   // retrieval reference / ARN
-                    .append("|DE38=").append(nullToEmpty(t.getAuthCode()))
-                    .append("|DE41=").append(nullToEmpty(t.getMerchantId()))
+                    .append("|DE37=").append(StringUtils.nullToEmpty(t.getArn()))   // retrieval reference / ARN
+                    .append("|DE38=").append(StringUtils.nullToEmpty(t.getAuthCode()))
+                    .append("|DE41=").append(StringUtils.nullToEmpty(t.getMerchantId()))
                     .append("|DE49=").append(t.getCurrency())
                     .append("|DE63=").append(t.getSourceTransactionId())
-                    .append("|MCC=").append(nullToEmpty(t.getMcc()))
+                    .append("|MCC=").append(StringUtils.nullToEmpty(t.getMcc()))
                     .append('\n');
         }
         // File trailer: record count + control total (minor units)
@@ -67,9 +68,5 @@ public class Iso8583Formatter implements ClearingMessageFormatter {
     private static String pad12(long amountMinor) {
         String s = Long.toString(Math.abs(amountMinor));
         return "000000000000".substring(Math.min(s.length(), 12)) + s;
-    }
-
-    private static String nullToEmpty(String v) {
-        return v == null ? "" : v;
     }
 }

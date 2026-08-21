@@ -3,6 +3,7 @@ package com.paymentprocessor.clearingservice.service.format;
 import com.paymentprocessor.clearingservice.domain.ClearingBatch;
 import com.paymentprocessor.clearingservice.domain.ClearingTransaction;
 import com.paymentprocessor.clearingservice.domain.enums.ClearingFormat;
+import com.paymentprocessor.clearingservice.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -46,10 +47,10 @@ public class NachaFormatter implements ClearingMessageFormatter {
             seq++;
             // 6 - Entry Detail Record
             sb.append("6|").append(transactionCode(t))
-                    .append('|').append(nullToEmpty(t.getMerchantId()))
+                    .append('|').append(StringUtils.nullToEmpty(t.getMerchantId()))
                     .append('|').append(t.getAmountMinor())
                     .append('|').append(t.getSourceTransactionId())
-                    .append('|').append(nullToEmpty(t.getArn()))
+                    .append('|').append(StringUtils.nullToEmpty(t.getArn()))
                     .append('|').append(pad(seq))
                     .append('\n');
         }
@@ -71,9 +72,5 @@ public class NachaFormatter implements ClearingMessageFormatter {
     private static String pad(int seq) {
         String s = Integer.toString(seq);
         return "0000000".substring(Math.min(s.length(), 7)) + s;
-    }
-
-    private static String nullToEmpty(String v) {
-        return v == null ? "" : v;
     }
 }

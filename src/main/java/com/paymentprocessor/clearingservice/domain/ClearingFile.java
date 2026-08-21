@@ -58,18 +58,59 @@ public class ClearingFile {
     public static ClearingFile of(UUID batchId, ClearingFormat format, String fileName,
                                   String contentHash, long sizeBytes, int recordCount,
                                   long controlTotalMinor, String storageUri, String signature) {
-        ClearingFile f = new ClearingFile();
-        f.id = UUID.randomUUID();
-        f.batchId = batchId;
-        f.format = format;
-        f.fileName = fileName;
-        f.contentHash = contentHash;
-        f.sizeBytes = sizeBytes;
-        f.recordCount = recordCount;
-        f.controlTotalMinor = controlTotalMinor;
-        f.storageUri = storageUri;
-        f.signature = signature;
-        return f;
+        return builder()
+                .batchId(batchId)
+                .format(format)
+                .fileName(fileName)
+                .contentHash(contentHash)
+                .sizeBytes(sizeBytes)
+                .recordCount(recordCount)
+                .controlTotalMinor(controlTotalMinor)
+                .storageUri(storageUri)
+                .signature(signature)
+                .build();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /** Fluent builder for {@link ClearingFile}. */
+    public static final class Builder {
+        private UUID batchId;
+        private ClearingFormat format;
+        private String fileName;
+        private String contentHash;
+        private long sizeBytes;
+        private int recordCount;
+        private long controlTotalMinor;
+        private String storageUri;
+        private String signature;
+
+        public Builder batchId(UUID v) { this.batchId = v; return this; }
+        public Builder format(ClearingFormat v) { this.format = v; return this; }
+        public Builder fileName(String v) { this.fileName = v; return this; }
+        public Builder contentHash(String v) { this.contentHash = v; return this; }
+        public Builder sizeBytes(long v) { this.sizeBytes = v; return this; }
+        public Builder recordCount(int v) { this.recordCount = v; return this; }
+        public Builder controlTotalMinor(long v) { this.controlTotalMinor = v; return this; }
+        public Builder storageUri(String v) { this.storageUri = v; return this; }
+        public Builder signature(String v) { this.signature = v; return this; }
+
+        public ClearingFile build() {
+            ClearingFile f = new ClearingFile();
+            f.id = UUID.randomUUID();
+            f.batchId = batchId;
+            f.format = format;
+            f.fileName = fileName;
+            f.contentHash = contentHash;
+            f.sizeBytes = sizeBytes;
+            f.recordCount = recordCount;
+            f.controlTotalMinor = controlTotalMinor;
+            f.storageUri = storageUri;
+            f.signature = signature;
+            return f;
+        }
     }
 
     @PrePersist

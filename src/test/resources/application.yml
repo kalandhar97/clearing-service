@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: clearing-service-test
+  config:
+    import: ""
+  cloud:
+    config:
+      enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      properties:
+        enable.idempotence: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
+          issuer-uri: https://auth.paymentprocessor.local
+
+clearing:
+  batching:
+    max-batch-size: 100
+    formation-cron: '0 */10 * * * *'
+  submission:
+    sweep-cron: '0 * * * * *'
+    max-attempts: 3
+    backoff-initial-ms: 1000
+    backoff-multiplier: 2.0
+  storage:
+    directory: ./clearing-files-test
+  transport:
+    mock: true
+  outbox:
+    publish-cron: '*/5 * * * * *'
+    batch-size: 200
+  events:
+    topic: clearingservicetopic
+
+security:
+  jwt:
+    enabled: false

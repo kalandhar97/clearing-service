@@ -105,20 +105,55 @@ public class ClearingBatch {
     public static ClearingBatch create(String reference, Network network, String currency,
                                        String region, LocalDate settlementDate,
                                        ClearingFormat format, Instant cutoffAt) {
-        ClearingBatch b = new ClearingBatch();
-        b.id = UUID.randomUUID();
-        b.reference = reference;
-        b.network = network;
-        b.currency = currency;
-        b.region = region;
-        b.settlementDate = settlementDate;
-        b.format = format;
-        b.status = BatchStatus.CREATED;
-        b.transactionCount = 0;
-        b.totalAmountMinor = 0L;
-        b.cutoffAt = cutoffAt;
-        b.submissionAttempts = 0;
-        return b;
+        return builder()
+                .reference(reference)
+                .network(network)
+                .currency(currency)
+                .region(region)
+                .settlementDate(settlementDate)
+                .format(format)
+                .cutoffAt(cutoffAt)
+                .build();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /** Fluent builder for {@link ClearingBatch}. */
+    public static final class Builder {
+        private String reference;
+        private Network network;
+        private String currency;
+        private String region;
+        private LocalDate settlementDate;
+        private ClearingFormat format;
+        private Instant cutoffAt;
+
+        public Builder reference(String v) { this.reference = v; return this; }
+        public Builder network(Network v) { this.network = v; return this; }
+        public Builder currency(String v) { this.currency = v; return this; }
+        public Builder region(String v) { this.region = v; return this; }
+        public Builder settlementDate(LocalDate v) { this.settlementDate = v; return this; }
+        public Builder format(ClearingFormat v) { this.format = v; return this; }
+        public Builder cutoffAt(Instant v) { this.cutoffAt = v; return this; }
+
+        public ClearingBatch build() {
+            ClearingBatch b = new ClearingBatch();
+            b.id = UUID.randomUUID();
+            b.reference = reference;
+            b.network = network;
+            b.currency = currency;
+            b.region = region;
+            b.settlementDate = settlementDate;
+            b.format = format;
+            b.status = BatchStatus.CREATED;
+            b.transactionCount = 0;
+            b.totalAmountMinor = 0L;
+            b.cutoffAt = cutoffAt;
+            b.submissionAttempts = 0;
+            return b;
+        }
     }
 
     @PrePersist

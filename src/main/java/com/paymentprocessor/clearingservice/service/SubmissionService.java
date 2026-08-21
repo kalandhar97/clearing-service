@@ -1,7 +1,6 @@
 package com.paymentprocessor.clearingservice.service;
 
 import com.paymentprocessor.clearingservice.audit.AuditService;
-import com.paymentprocessor.clearingservice.config.ClearingProperties;
 import com.paymentprocessor.clearingservice.domain.AuditEntry;
 import com.paymentprocessor.clearingservice.domain.ClearingBatch;
 import com.paymentprocessor.clearingservice.domain.ClearingFile;
@@ -13,10 +12,12 @@ import com.paymentprocessor.clearingservice.event.OutboxService;
 import com.paymentprocessor.clearingservice.repository.ClearingBatchRepository;
 import com.paymentprocessor.clearingservice.repository.ClearingFileRepository;
 import com.paymentprocessor.clearingservice.repository.ClearingTransactionRepository;
+import com.paymentprocessor.clearingservice.service.retry.RetryStrategy;
 import com.paymentprocessor.clearingservice.service.storage.ClearingFileStorage;
 import com.paymentprocessor.clearingservice.service.transport.ClearingTransport;
 import com.paymentprocessor.clearingservice.service.transport.SubmissionReceipt;
 import com.paymentprocessor.clearingservice.service.transport.TransportException;
+import com.paymentprocessor.clearingservice.util.StringUtils;
 import com.paymentprocessor.clearingservice.web.exception.ConflictException;
 import com.paymentprocessor.clearingservice.web.exception.NotFoundException;
 import java.time.Instant;
@@ -47,9 +48,7 @@ public class SubmissionService {
     private final ClearingFileStorage storage;
     private final AuditService auditService;
     private final OutboxService outboxService;
-    private final int maxAttempts;
-    private final long backoffInitialMs;
-    private final double backoffMultiplier;
+    private final RetryStrategy retryStrategy;
 
     public SubmissionService(ClearingBatchRepository batchRepository,
                              ClearingFileRepository fileRepository,
@@ -58,7 +57,7 @@ public class SubmissionService {
                              ClearingFileStorage storage,
                              AuditService auditService,
                              OutboxService outboxService,
-                             ClearingProperties properties) {
+                             RetryStrategy retryStrategy) {
         this.batchRepository = batchRepository;
         this.fileRepository = fileRepository;
         this.txnRepository = txnRepository;
@@ -66,9 +65,7 @@ public class SubmissionService {
         this.storage = storage;
         this.auditService = auditService;
         this.outboxService = outboxService;
-        this.maxAttempts = properties.submission().maxAttempts();
-        this.backoffInitialMs = properties.submission().backoffInitialMs();
-        this.backoffMultiplier = properties.submission().backoffMultiplier();
+        this.retryStrategy = retryStrategy;
     }
 
     @Transactional(readOnly = true)
@@ -115,56 +112,57 @@ public class SubmissionService {
 
         try {
             SubmissionReceipt receipt = transport.submit(batch, file, content);
-            batch.setAckReference(receipt.receiptReference());
-            batch.setLastError(null);
-            batch.setNextAttemptAt(null);
-            batch.transitionTo(BatchStatus.SENT);
-            batchRepository.save(batch);
-
-            auditService.record(AuditEntry.builder("SUBMITTED", ACTOR)
-                    .batchId(batch.getId())
-                    .participantId(batch.getNetwork().name())
-                    .fileName(file.getFileName())
-                    .fileHash(file.getContentHash())
-                    .beforeState(BatchStatus.VALIDATED.name())
-                    .afterState(BatchStatus.SENT.name())
-                    .detail("Submission receipt " + receipt.receiptReference())
-                    .build());
-
-            outboxService.append(ClearingEvents.AGGREGATE_BATCH, batch.getId().toString(),
-                    ClearingEvents.CLEARING_SUBMITTED,
-                    ClearingEventPayload.of(ClearingEvents.CLEARING_SUBMITTED, batch));
-
+            markSubmitted(batch, file, receipt);
             log.info("Batch {} submitted (attempt {})", batch.getReference(), batch.getSubmissionAttempts());
-
         } catch (TransportException e) {
             handleFailure(batch, file, e.getMessage(), e.isRetryable());
         }
     }
 
+    private void markSubmitted(ClearingBatch batch, ClearingFile file, SubmissionReceipt receipt) {
+        batch.setAckReference(receipt.receiptReference());
+        batch.setLastError(null);
+        batch.setNextAttemptAt(null);
+        batch.transitionTo(BatchStatus.SENT);
+        batchRepository.save(batch);
+
+        auditService.record(AuditEntry.builder("SUBMITTED", ACTOR)
+                .batchId(batch.getId())
+                .participantId(batch.getNetwork().name())
+                .fileName(file.getFileName())
+                .fileHash(file.getContentHash())
+                .beforeState(BatchStatus.VALIDATED.name())
+                .afterState(BatchStatus.SENT.name())
+                .detail("Submission receipt " + receipt.receiptReference())
+                .build());
+
+        outboxService.append(ClearingEvents.AGGREGATE_BATCH, batch.getId().toString(),
+                ClearingEvents.CLEARING_SUBMITTED,
+                ClearingEventPayload.of(ClearingEvents.CLEARING_SUBMITTED, batch));
+    }
+
     private void handleFailure(ClearingBatch batch, ClearingFile file, String message, boolean retryable) {
         batch.setLastError(truncate(message));
-        boolean attemptsExhausted = batch.getSubmissionAttempts() >= maxAttempts;
+        boolean attemptsExhausted = batch.getSubmissionAttempts() >= retryStrategy.maxAttempts();
 
         if (!retryable || attemptsExhausted) {
             failTerminally(batch, message, retryable ? "MAX_RETRIES_EXCEEDED" : "NON_RETRYABLE");
             return;
         }
 
-        long delayMs = computeBackoffMs(batch.getSubmissionAttempts());
-        batch.setNextAttemptAt(Instant.now().plusMillis(delayMs));
+        batch.setNextAttemptAt(retryStrategy.nextAttemptAt(batch.getSubmissionAttempts()));
         batchRepository.save(batch);
 
         auditService.record(AuditEntry.builder("SUBMISSION_RETRY_SCHEDULED", ACTOR)
                 .batchId(batch.getId())
                 .participantId(batch.getNetwork().name())
                 .reasonCode("TRANSIENT")
-                .detail("Attempt " + batch.getSubmissionAttempts() + " failed; retrying in "
-                        + delayMs + "ms. " + truncate(message))
+                .detail("Attempt " + batch.getSubmissionAttempts() + " failed; next retry scheduled. "
+                        + truncate(message))
                 .build());
 
-        log.warn("Batch {} submission attempt {} failed (retryable); next attempt in {}ms: {}",
-                batch.getReference(), batch.getSubmissionAttempts(), delayMs, message);
+        log.warn("Batch {} submission attempt {} failed (retryable); next attempt at {}: {}",
+                batch.getReference(), batch.getSubmissionAttempts(), batch.getNextAttemptAt(), message);
     }
 
     private void failTerminally(ClearingBatch batch, String message, String reasonCode) {
@@ -174,7 +172,6 @@ public class SubmissionService {
         batch.transitionTo(BatchStatus.FAILED);
         batchRepository.save(batch);
 
-        // Mark the batch's transactions as failed for manual intervention.
         List<ClearingTransaction> txns = txnRepository.findByBatchId(batch.getId());
         for (ClearingTransaction t : txns) {
             t.markFailed(reasonCode + ": " + truncate(message));
@@ -197,15 +194,7 @@ public class SubmissionService {
         log.error("Batch {} failed permanently ({}): {}", batch.getReference(), reasonCode, message);
     }
 
-    private long computeBackoffMs(int attempt) {
-        double factor = Math.pow(backoffMultiplier, Math.max(0, attempt - 1));
-        return (long) (backoffInitialMs * factor);
-    }
-
     private static String truncate(String s) {
-        if (s == null) {
-            return null;
-        }
-        return s.length() <= MAX_ERROR_LEN ? s : s.substring(0, MAX_ERROR_LEN);
+        return StringUtils.truncate(s, MAX_ERROR_LEN);
     }
 }

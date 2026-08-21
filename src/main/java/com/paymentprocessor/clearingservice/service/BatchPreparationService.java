@@ -6,15 +6,14 @@ import com.paymentprocessor.clearingservice.domain.AuditEntry;
 import com.paymentprocessor.clearingservice.domain.ClearingBatch;
 import com.paymentprocessor.clearingservice.domain.ClearingTransaction;
 import com.paymentprocessor.clearingservice.domain.enums.BatchStatus;
-import com.paymentprocessor.clearingservice.domain.enums.ClearingFormat;
-import com.paymentprocessor.clearingservice.domain.enums.Network;
 import com.paymentprocessor.clearingservice.event.ClearingEventPayload;
 import com.paymentprocessor.clearingservice.event.ClearingEvents;
 import com.paymentprocessor.clearingservice.event.OutboxService;
 import com.paymentprocessor.clearingservice.repository.ClearingBatchRepository;
 import com.paymentprocessor.clearingservice.repository.ClearingTransactionRepository;
+import com.paymentprocessor.clearingservice.service.reference.BatchReferenceGenerator;
+import com.paymentprocessor.clearingservice.domain.enums.Network;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class BatchPreparationService {
 
     private static final Logger log = LoggerFactory.getLogger(BatchPreparationService.class);
-    private static final DateTimeFormatter REF_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final String ACTOR = "clearing-service";
 
     private final ClearingTransactionRepository txnRepository;
@@ -44,6 +42,7 @@ public class BatchPreparationService {
     private final FileGenerationService fileGenerationService;
     private final AuditService auditService;
     private final OutboxService outboxService;
+    private final BatchReferenceGenerator referenceGenerator;
     private final int maxBatchSize;
 
     public BatchPreparationService(ClearingTransactionRepository txnRepository,
@@ -52,6 +51,7 @@ public class BatchPreparationService {
                                    FileGenerationService fileGenerationService,
                                    AuditService auditService,
                                    OutboxService outboxService,
+                                   BatchReferenceGenerator referenceGenerator,
                                    ClearingProperties properties) {
         this.txnRepository = txnRepository;
         this.batchRepository = batchRepository;
@@ -59,6 +59,7 @@ public class BatchPreparationService {
         this.fileGenerationService = fileGenerationService;
         this.auditService = auditService;
         this.outboxService = outboxService;
+        this.referenceGenerator = referenceGenerator;
         this.maxBatchSize = properties.batching().maxBatchSize();
     }
 
@@ -70,31 +71,48 @@ public class BatchPreparationService {
             return Optional.empty();
         }
 
+        List<ClearingTransaction> valid = validateAndFilter(network, pending);
+        if (valid.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ClearingBatch batch = createAndSaveBatch(network, currency, settlementDate, valid);
+        generateClearingFile(batch, valid);
+        finalizeBatch(batch);
+
+        log.info("Prepared batch {} ({} txns, total {} minor {})",
+                batch.getReference(), valid.size(), batch.getTotalAmountMinor(), currency);
+        return Optional.of(batch);
+    }
+
+    private List<ClearingTransaction> validateAndFilter(Network network, List<ClearingTransaction> pending) {
         List<ClearingTransaction> valid = new ArrayList<>(pending.size());
         for (ClearingTransaction t : pending) {
             List<String> violations = validationService.validate(t);
             if (violations.isEmpty()) {
                 valid.add(t);
             } else {
-                String reason = String.join("; ", violations);
-                t.markRejected(reason);
-                txnRepository.save(t);
-                auditService.record(AuditEntry.builder("VALIDATION_REJECTED", ACTOR)
-                        .transactionId(t.getId())
-                        .reasonCode("INVALID_FIELD")
-                        .detail(reason)
-                        .build());
+                rejectTransaction(t, String.join("; ", violations));
             }
         }
+        return valid;
+    }
 
-        if (valid.isEmpty()) {
-            return Optional.empty();
-        }
+    private void rejectTransaction(ClearingTransaction t, String reason) {
+        t.markRejected(reason);
+        txnRepository.save(t);
+        auditService.record(AuditEntry.builder("VALIDATION_REJECTED", ACTOR)
+                .transactionId(t.getId())
+                .reasonCode("INVALID_FIELD")
+                .detail(reason)
+                .build());
+    }
 
-        ClearingFormat format = network.defaultFormat();
-        String reference = generateReference(network, currency, settlementDate);
+    private ClearingBatch createAndSaveBatch(Network network, String currency, LocalDate settlementDate,
+                                             List<ClearingTransaction> valid) {
+        String reference = referenceGenerator.generate(network, currency, settlementDate);
         ClearingBatch batch = ClearingBatch.create(reference, network, currency, null,
-                settlementDate, format, null);
+                settlementDate, network.defaultFormat(), null);
         batch = batchRepository.save(batch);
         UUID batchId = batch.getId();
 
@@ -112,31 +130,26 @@ public class BatchPreparationService {
                 .afterState(BatchStatus.CREATED.name())
                 .detail("Formed batch " + reference + " with " + valid.size() + " transactions")
                 .build());
+        return batch;
+    }
 
+    private void generateClearingFile(ClearingBatch batch, List<ClearingTransaction> valid) {
         fileGenerationService.generate(batch, valid);
+    }
 
+    private void finalizeBatch(ClearingBatch batch) {
         batch.transitionTo(BatchStatus.VALIDATED);
         batch = batchRepository.save(batch);
 
         auditService.record(AuditEntry.builder("BATCH_VALIDATED", ACTOR)
-                .batchId(batchId)
-                .participantId(network.name())
+                .batchId(batch.getId())
+                .participantId(batch.getNetwork().name())
                 .beforeState(BatchStatus.CREATED.name())
                 .afterState(BatchStatus.VALIDATED.name())
                 .build());
 
-        outboxService.append(ClearingEvents.AGGREGATE_BATCH, batchId.toString(),
+        outboxService.append(ClearingEvents.AGGREGATE_BATCH, batch.getId().toString(),
                 ClearingEvents.CLEARING_BATCH_CREATED,
                 ClearingEventPayload.of(ClearingEvents.CLEARING_BATCH_CREATED, batch));
-
-        log.info("Prepared batch {} ({} txns, total {} minor {})",
-                reference, valid.size(), total, currency);
-        return Optional.of(batch);
-    }
-
-    private String generateReference(Network network, String currency, LocalDate settlementDate) {
-        String suffix = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        return "CLR-" + settlementDate.format(REF_DATE) + "-" + network.name()
-                + "-" + currency + "-" + suffix;
     }
 }
